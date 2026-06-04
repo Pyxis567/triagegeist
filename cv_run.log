@@ -1,0 +1,18 @@
+=== XGBoost 5-fold CV ===
+  Fold 1/5  F1=0.9711
+  Fold 2/5  F1=0.9685
+  Fold 3/5  F1=0.9708
+  Fold 4/5  F1=0.9698
+  Fold 5/5  F1=0.9725
+  OOF Macro F1: 0.9705  mean±std: 0.9705±0.0014
+
+=== LightGBM 5-fold CV ===
+  Fold 1/5  F1=0.9729
+  Fold 2/5  F1=0.9704
+  Fold 3/5  F1=0.9731
+  Fold 4/5  F1=0.9714
+  Fold 5/5  F1=0.9744
+  OOF Macro F1: 0.9724  mean±std: 0.9724±0.0014
+
+Saving best submission...
+Saved: submissions/lightgbm_cv0.9724.csv
