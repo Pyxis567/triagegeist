@@ -57,7 +57,7 @@ Key feature groups: **vital signs** (BP, HR, SpO2, temp, respiratory rate), **de
 triagegeist/
 ├── CLAUDE.md                      ← agent workflow and style guide
 ├── README.md
-├── train_all.py                   ← runs all models and saves best submission
+├── train_all.py                   ← headless runner: trains all models, saves figures + best submission CSV
 ├── triagegeist.ipynb              ← main integration + visualization notebook
 ├── raw_data/
 │   ├── train.csv
@@ -69,7 +69,9 @@ triagegeist/
 ├── src/
 │   ├── feature_engineering.py     ← all feature transforms (build_features)
 │   ├── models.py                  ← run_xgb, run_lgbm, run_nn
-│   └── utils.py                   ← metrics, plotting, SEED, color palette
+│   ├── utils.py                   ← metrics, plotting, SEED, color palette
+│   └── tests/
+│       └── test_feature_engineering.py  ← pytest unit tests for build_features
 ├── submissions/                   ← generated CSVs ready to upload
 └── figures/                       ← auto-saved plots from train_all.py
 ```
