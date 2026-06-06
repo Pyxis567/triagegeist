@@ -85,7 +85,7 @@ triagegeist/
 
 ## Feature Engineering
 
-**297 features total** — built in `src/feature_engineering.py` via `build_features(train_df, test_df, history_df, chief_df)`. Fits on train, applies to test (no leakage).
+**297 features total** — built in `src/feature_engineering.py` via `build_features(train_df, test_df, history_df, chief_df)`.
 
 ### Pipeline stages
 
