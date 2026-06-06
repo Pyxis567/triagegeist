@@ -1,0 +1,20 @@
+{
+  "model": "xgb",
+  "best_f1": 0.9716182044501503,
+  "best_n_estimators": 1992,
+  "params": {
+    "max_depth": 6,
+    "min_child_weight": 4,
+    "learning_rate": 0.050162956244145795,
+    "subsample": 0.7329706831962027,
+    "colsample_bytree": 0.8958124721132177,
+    "colsample_bylevel": 0.8668683495233792,
+    "colsample_bynode": 0.8325659955504546,
+    "gamma": 1.8655282415365584,
+    "reg_alpha": 0.012806167308252531,
+    "reg_lambda": 0.013525652728586976,
+    "max_delta_step": 1
+  },
+  "n_trials_completed": 50,
+  "elapsed_min": 150.9
+}

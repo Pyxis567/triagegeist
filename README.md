@@ -2,9 +2,6 @@
 
 Predicting emergency department triage acuity using machine learning — classifying patients into ESI urgency levels from structured clinical data collected at the point of triage.
 
-> [!WARNING]
-> 🚧 **This project is under active construction.** Expect incomplete sections, breaking changes, and work-in-progress code.
-
 ---
 
 ## Competition
@@ -29,12 +26,13 @@ The challenge is to predict the **Emergency Severity Index (ESI) triage acuity l
 
 | Model | CV Macro F1 | Notes |
 |-------|-------------|-------|
-| **LightGBM** | **0.9730** | Best; `submissions/lightgbm_0.9730.csv` |
-| LightGBM | 0.9724 | Earlier run; `submissions/lightgbm_cv0.9724.csv` |
-| XGBoost | 0.9705 ± 0.0014 | 5-fold CV OOF |
+| **Ensemble (LGBM + XGB tuned)** | **0.9730** | Best; `submissions/ensemble_lgbm_xgb_a0.25_0.9730.csv` |
+| LightGBM (default) | 0.9727 | 5-fold OOF; `submissions/lightgbm_0.9730.csv` |
+| XGBoost (tuned) | 0.9723 | 5-fold OOF after Optuna; `submissions/best_params_xgb.json` |
+| XGBoost (default) | 0.9705 ± 0.0014 | Untuned baseline |
 | MLP (PyTorch) | ~0.9694 | Single holdout (20% split) |
 
-Both XGBoost and LightGBM use **5-fold stratified CV** — OOF macro F1 is reported, then the model is retrained on the full training set for test predictions.
+All tree models use **5-fold stratified CV** (OOF macro F1). The ensemble blends LightGBM and tuned XGBoost probability outputs at α=0.25/0.75.
 
 ---
 
@@ -57,7 +55,9 @@ Key feature groups: **vital signs** (BP, HR, SpO2, temp, respiratory rate), **de
 triagegeist/
 ├── CLAUDE.md                      ← agent workflow and style guide
 ├── README.md
-├── train_all.py                   ← headless runner: trains all models, saves figures + best submission CSV
+├── train_all.py                   ← baseline: trains all models, saves figures + best submission CSV
+├── tune.py                        ← Optuna tuning entry point (LGBM / XGB)
+├── ensemble.py                    ← OOF blend of default LGBM + tuned XGB
 ├── triagegeist.ipynb              ← main integration + visualization notebook
 ├── raw_data/
 │   ├── train.csv
@@ -69,10 +69,15 @@ triagegeist/
 ├── src/
 │   ├── feature_engineering.py     ← all feature transforms (build_features)
 │   ├── models.py                  ← run_xgb, run_lgbm, run_nn
+│   ├── tuning.py                  ← Optuna objectives + study runner
 │   ├── utils.py                   ← metrics, plotting, SEED, color palette
 │   └── tests/
-│       └── test_feature_engineering.py  ← pytest unit tests for build_features
-├── submissions/                   ← generated CSVs ready to upload
+│       └── test_feature_engineering.py
+├── submissions/
+│   ├── best_params_lgbm.json      ← best Optuna params for LightGBM
+│   ├── best_params_xgb.json       ← best Optuna params for XGBoost
+│   ├── ensemble_summary.json      ← blend strategy + final OOF score
+│   └── *.csv                      ← submission files
 └── figures/                       ← auto-saved plots from train_all.py
 ```
 
@@ -103,11 +108,6 @@ triagegeist/
 17. **Age-stratified features** — `is_pediatric`, `is_geriatric`; PALS-adjusted tachycardia/bradycardia/tachypnea thresholds; REMS age score; geriatric danger flags (`geriatric_news2`, `elderly_gcs_impaired`, `elderly_qsofa`); pediatric danger flags (`infant_fever`, `pediatric_high_news2`)
 18. **TF-IDF on chief complaint text** — 100 features, unigrams + bigrams, fit on train
 
-### Feature selection (tested, not applied)
-
-Four selection strategies were tested against the 297-feature baseline; none improved meaningfully (all differences within fold noise, ±0.0014). All 297 features are kept. Three features have zero importance in LightGBM (`is_hypertensive_crisis`, `is_bradypnea`, `is_hypothermia`) — rare events with no useful splits in this dataset.
-
----
 
 ## Models
 
@@ -116,14 +116,17 @@ All models are defined in `src/models.py` and importable into the notebook.
 ### LightGBM (`run_lgbm`)
 - 5-fold stratified CV, retrain on full data for test predictions
 - Default: 300 estimators, max_depth=7, lr=0.1, subsample=0.8, colsample_bytree=0.8
-- GPU training when available (`device="gpu"`)
-- **Best CV Macro F1: 0.9730**
+- **CV Macro F1: 0.9727**
 
-### XGBoost (`run_xgb`)
-- 5-fold stratified CV, retrain on full data for test predictions
-- Default: 300 estimators, max_depth=7, lr=0.1, subsample=0.8, colsample_bytree=0.8
-- GPU training when available (`tree_method="hist", device="cuda"`)
-- **CV Macro F1: 0.9705 ± 0.0014**
+### XGBoost — tuned (`tune.py --model xgb`)
+- Tuned via Optuna (50 trials, 3-fold CV, CUDA); best params in `submissions/best_params_xgb.json`
+- Best params: max_depth=6, lr=0.050, n_estimators=1992, gamma=1.87, subsample=0.73
+- **CV Macro F1: 0.9723** (5-fold OOF; +0.0018 over untuned baseline of 0.9705)
+
+### Ensemble (`ensemble.py`)
+- OOF probability blend: 25% LightGBM + 75% tuned XGBoost
+- Blend weight optimised by grid search (α ∈ [0, 1], step 0.05) on 5-fold OOF
+- **OOF Macro F1: 0.9730**; submission: `submissions/ensemble_lgbm_xgb_a0.25_0.9730.csv`
 
 ### MLP — PyTorch (`run_nn`)
 - Architecture: Linear → BatchNorm → ReLU → Dropout(0.3), layers [256, 128, 64]
@@ -132,19 +135,44 @@ All models are defined in `src/models.py` and importable into the notebook.
 
 ---
 
+## Hyperparameter Tuning
+
+XGBoost was tuned with [Optuna](https://optuna.org/) using TPE sampling and HyperbandPruner. LightGBM tuning (20 trials) did not improve over the default configuration.
+
+| | LGBM | XGBoost |
+|---|---|---|
+| Trials | 20 | 50 |
+| CV folds | 5 | 5 |
+| Best 5-fold F1 | 0.9727 | 0.9723 |
+| n_estimators | 300 | 1992 |
+
+Key XGBoost params found: `max_depth=6`, `learning_rate=0.050`, `gamma=1.87`, `max_delta_step=1`, `colsample_bynode=0.83`.
+
+Run tuning:
+```bash
+python tune.py --model xgb --n-trials 50   # resumes from SQLite if interrupted
+python tune.py --model lgbm --n-trials 20
+```
+
+---
+
 ## Setup
 
 ```bash
-# Activate environment
-conda activate C:\Users\Xh321\Miniforge3\envs\dsc80
+# Run all baseline models
+python train_all.py
 
-# Run all models and save best submission
-conda run -p C:\Users\Xh321\Miniforge3\envs\dsc80 python train_all.py
+# Hyperparameter tuning (resumes from SQLite if killed mid-run)
+python tune.py --model lgbm --n-trials 20
+python tune.py --model xgb  --n-trials 50
 
-# Or open the notebook
+# Ensemble tuned XGB + default LGBM
+python ensemble.py
+
+# Open notebook
 conda run -p C:\Users\Xh321\Miniforge3\envs\dsc80 jupyter notebook
 ```
 
-**Reproducibility:** `SEED = 93` — passed to all models and CV splits.
+**Reproducibility:** `SEED = 93` — passed to all models, CV splits, and Optuna samplers.
 
 

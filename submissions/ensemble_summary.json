@@ -1,0 +1,8 @@
+{
+  "best_strategy": "blend",
+  "best_oof_f1": 0.972990752932788,
+  "blend_alpha": 0.25,
+  "lgbm_default_5fold_cv": 0.9726847442591622,
+  "xgb_tuned_5fold_cv": 0.9723423449018098,
+  "submission_file": "submissions/ensemble_lgbm_xgb_a0.25_0.9730.csv"
+}

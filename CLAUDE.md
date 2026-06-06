@@ -183,16 +183,29 @@ print(f"Using device: {device}")
   ```
 - Never hardcode `device="cpu"` or `"cuda"` — always use the detection snippet above.
 
-## Current State (as of 2026-06-03)
+## Current State (as of 2026-06-06)
 
 ### Models
-Random Forest has been removed. Active models are XGBoost, LightGBM, and MLP (PyTorch). XGBoost and LightGBM both use **5-fold stratified CV** — OOF predictions are used for the reported macro F1, then the model is retrained on the full training set for test predictions.
+Random Forest has been removed. Active models are XGBoost, LightGBM, and MLP (PyTorch). XGBoost and LightGBM both use **5-fold stratified CV**.
 
 | Model | CV Macro F1 | Notes |
 |-------|-------------|-------|
-| LightGBM | 0.9724 | Best model; `submissions/lightgbm_cv0.9724.csv` |
-| XGBoost  | 0.9705 | |
-| MLP      | ~0.96  | Single holdout; no CV yet |
+| **Ensemble** | **0.9730** | Best; 25% LGBM + 75% tuned XGB OOF blend; `submissions/ensemble_lgbm_xgb_a0.25_0.9730.csv` |
+| LightGBM (default) | 0.9727 | 5-fold OOF; `submissions/lightgbm_0.9730.csv` |
+| XGBoost (tuned) | 0.9723 | Optuna 50 trials; `submissions/best_params_xgb.json` |
+| XGBoost (default) | 0.9705 | Untuned baseline |
+| MLP | ~0.9694 | Single holdout |
+
+### Hyperparameter Tuning (completed 2026-06-06)
+- **Tool:** Optuna, TPE sampler, HyperbandPruner, SQLite persistence (`submissions/optuna_*.db`)
+- **CV:** 3-fold during search, validated with 5-fold after
+- **LGBM:** 20 trials — best 3-fold F1=0.9695; default params proved stronger in 5-fold (0.9727 vs 0.9699 tuned). Default params kept.
+- **XGBoost:** 50 trials — best 3-fold F1=0.9716, validated 5-fold F1=0.9723 (+0.0018 over untuned). Best params: `max_depth=6, lr=0.050, n_estimators=1992, gamma=1.87, max_delta_step=1, colsample_bynode=0.83`.
+
+### Ensemble (completed 2026-06-06)
+Grid-searched blend weight α ∈ [0, 1] (step 0.05) on 5-fold OOF probabilities:
+- Best: **α=0.25** (25% default LGBM + 75% tuned XGB) → OOF F1 = **0.9730**
+- Submission: `submissions/ensemble_lgbm_xgb_a0.25_0.9730.csv`
 
 ### Feature Engineering (297 features total)
 Built in `src/feature_engineering.py`. Key additions beyond raw features:
@@ -211,7 +224,55 @@ Ran `feature_selection_test.py` — four strategies tested against the 297-featu
 
 ## To-Do
 
-- [ ] **Hyperparameter tuning** — Optuna on LightGBM and XGBoost (most likely next gain)
-- [ ] **Ensemble / stacking** — blend XGBoost + LightGBM OOF predictions
+- [x] **Hyperparameter tuning** — Optuna on LightGBM and XGBoost; completed 2026-06-06
+  - **Setup:** Create `src/tuning.py` with one Optuna objective per model. Both use full **5-fold stratified CV** per trial (same folds as baseline, SEED=93). Use early stopping (`callbacks=[lgb.early_stopping(50)]` / `early_stopping_rounds=50`) so `n_estimators` is found automatically — set it high (3000) and let early stopping terminate. Save the best params + best n_estimators for each model to `submissions/best_params_lgbm.json` and `submissions/best_params_xgb.json` after tuning.
+
+  - **LightGBM tuning — ~3.5 hours, ~200 trials (GPU)**
+    - Sampler: TPE; Pruner: HyperbandPruner (prunes unpromising trials early via per-fold intermediate values)
+    - Search space:
+      - `num_leaves`: 31–1000 (key lever — directly controls model capacity)
+      - `max_depth`: -1 (unlimited) or 4–15; try both via categorical
+      - `learning_rate`: 0.005–0.2 (log scale)
+      - `n_estimators`: 3000 (always set high; early stopping finds true best)
+      - `min_child_samples`: 5–300 (prevents over-fitting on small leaves)
+      - `subsample` (bagging_fraction): 0.4–1.0
+      - `subsample_freq` (bagging_freq): 1–7
+      - `colsample_bytree` (feature_fraction): 0.4–1.0
+      - `reg_alpha` (L1): 1e-8–10.0 (log)
+      - `reg_lambda` (L2): 1e-8–10.0 (log)
+      - `min_split_gain`: 0.0–1.0
+      - `path_smooth`: 0.0–1.0
+    - Expected per-trial time: ~40–60s on RTX 3070 → 200 trials ≈ 2.5–3 hours
+    - Objective: mean 5-fold OOF macro F1 (maximize)
+
+  - **XGBoost tuning — ~3 hours, ~100 trials (GPU, `device="cuda"`)**
+    - Sampler: TPE; Pruner: HyperbandPruner
+    - Search space:
+      - `max_depth`: 3–12
+      - `min_child_weight`: 1–50
+      - `learning_rate`: 0.005–0.2 (log)
+      - `n_estimators`: 3000 (with early stopping 50 rounds)
+      - `subsample`: 0.4–1.0
+      - `colsample_bytree`: 0.4–1.0
+      - `colsample_bylevel`: 0.4–1.0
+      - `colsample_bynode`: 0.4–1.0
+      - `gamma`: 0–5
+      - `reg_alpha` (L1): 1e-8–10.0 (log)
+      - `reg_lambda` (L2): 1e-8–10.0 (log)
+      - `max_delta_step`: 0–10 (can help with class imbalance)
+    - Expected per-trial time: ~60–90s on RTX 3070 → 100 trials ≈ 1.5–2.5 hours
+    - Objective: mean 5-fold OOF macro F1 (maximize)
+
+  - **Validate winners (~15 min):** For each model, reload best params from JSON, run full 5-fold CV, print per-fold and mean F1. Compare to baselines (LGBM 0.9730, XGB 0.9705). Record gains.
+
+- [x] **Ensemble tuned LGBM + XGBoost** — completed 2026-06-06; OOF F1=0.9730
+  - Collect OOF `predict_proba` (shape: n_train × 5) from both tuned models
+  - **Strategy 1 — Weighted average:** sweep LGBM weight α ∈ [0, 1] (step 0.05) on OOF, pick α maximizing macro F1; apply same weight to held-out test probabilities before argmax
+  - **Strategy 2 — Rank averaging:** average softmax probability ranks across both models
+  - **Strategy 3 — Stacking:** train a LogisticRegression meta-learner on the 10 OOF probability columns (5 from each model); use 5-fold CV to generate meta-features to avoid leakage
+  - Pick best ensemble strategy by OOF macro F1; generate test submission
+  - Save submission as `submissions/ensemble_<strategy>_<f1>.csv`
+  - Only submit to Kaggle if OOF gain > fold noise (~0.0015)
+
 - [ ] **CV for MLP** — currently on single holdout; add 5-fold CV for a fair comparison
-- [ ] **Submit to Kaggle** — current best: `submissions/lightgbm_cv0.9724.csv`
+- [ ] **Submit to Kaggle** — current best: `submissions/ensemble_lgbm_xgb_a0.25_0.9730.csv`

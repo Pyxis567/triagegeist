@@ -1,0 +1,20 @@
+{
+  "model": "lgbm",
+  "best_f1": 0.9695195143399321,
+  "best_n_estimators": 1316,
+  "params": {
+    "num_leaves": 720,
+    "max_depth": 13,
+    "learning_rate": 0.015404894302934962,
+    "min_child_samples": 112,
+    "subsample": 0.676293407296473,
+    "subsample_freq": 1,
+    "colsample_bytree": 0.8636814377837367,
+    "reg_alpha": 3.886617592609738e-07,
+    "reg_lambda": 9.646297965173565e-05,
+    "min_split_gain": 0.11784984152158952,
+    "path_smooth": 0.7759156499089427
+  },
+  "n_trials_completed": 20,
+  "elapsed_min": 148.4
+}
