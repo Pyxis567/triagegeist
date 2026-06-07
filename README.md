@@ -2,6 +2,8 @@
 
 Predicting emergency department triage acuity using machine learning — classifying patients into ESI urgency levels from structured clinical data collected at the point of triage.
 
+## Live Demo: **https://triagegeist.onrender.com**
+
 ---
 
 ## Competition
@@ -163,12 +165,6 @@ Run tuning:
 python tune.py --model xgb --n-trials 50   # resumes from SQLite if interrupted
 python tune.py --model lgbm --n-trials 20
 ```
-
----
-
-## Live Demo
-
-**[→ Triagegeist Prediction Tool](https://TODO.github.io/triagegeist/)** — interactive ED triage acuity prediction; enter patient vitals and demographics, get an ESI level prediction with probability breakdown.
 
 ---
 
