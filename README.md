@@ -86,7 +86,7 @@ triagegeist/
     ├── app.py                     ← Flask server (serves index.html + /predict endpoint)
     ├── predict_patient.py         ← single-patient feature engineering pipeline
     ├── train_and_save.py          ← one-time script: trains models, saves to models/
-    ├──requirements.txt            ← Python dependencies for the Flask server
+    ├── requirements.txt            ← Python dependencies for the Flask server
     ├── models/                    ← saved model artefacts (gitignored if large)
     │   ├── lgbm_model.pkl
     │   ├── xgb_model.pkl
