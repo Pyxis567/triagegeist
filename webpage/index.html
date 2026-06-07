@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Triagegeist — ED Triage Acuity Prediction</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: linear-gradient(145deg, #eef3fb 0%, #dbeafe 45%, #e0f2fe 100%);
+    --glass: rgba(255,255,255,0.62);
+    --glass-border: rgba(255,255,255,0.82);
+    --shadow: 0 4px 28px rgba(74,127,193,0.10);
+    --blue: #4a7fc1;
+    --blue-dark: #3566a8;
+    --blue-faint: #dbeafe;
+    --text: #1e2d3d;
+    --muted: #6b7a8f;
+    --border: rgba(170,195,230,0.55);
+    --input-bg: rgba(255,255,255,0.82);
+    --error: #c0392b;
+    --error-bg: #fef5f5;
+    --warn: #d97706;
+    --warn-bg: #fffbeb;
+    --r: 18px;
+    --r-sm: 10px;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    min-height: 100vh;
+    color: var(--text);
+    font-size: 15px;
+    line-height: 1.6;
+  }
+
+  /* ── Layout ───────────────────────────────────────────────────── */
+  .page { max-width: 860px; margin: 0 auto; padding: 36px 20px 60px; }
+
+  /* ── Header ───────────────────────────────────────────────────── */
+  .header {
+    text-align: center;
+    margin-bottom: 28px;
+  }
+  .header-icon {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 56px; height: 56px; border-radius: 16px;
+    background: linear-gradient(135deg, #4a7fc1, #3566a8);
+    margin-bottom: 14px;
+  }
+  .header-icon svg { width: 30px; height: 30px; fill: white; }
+  .header h1 {
+    font-size: 2.2rem; font-weight: 800; letter-spacing: -0.5px;
+    background: linear-gradient(135deg, #2c5282, #4a7fc1);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .header p {
+    color: var(--muted); font-size: 0.97rem; margin-top: 6px;
+  }
+
+  /* ── Accuracy warning ─────────────────────────────────────────── */
+  .accuracy-card {
+    background: rgba(255,251,235,0.75);
+    border: 1px solid rgba(217,119,6,0.28);
+    border-radius: var(--r);
+    padding: 16px 22px;
+    margin-bottom: 20px;
+    display: flex; gap: 14px; align-items: flex-start;
+    backdrop-filter: blur(8px);
+  }
+  .accuracy-card .icon { font-size: 1.3rem; flex-shrink: 0; padding-top: 2px; }
+  .accuracy-card strong { color: var(--warn); display: block; font-size: 0.88rem; margin-bottom: 3px; }
+  .accuracy-card p { font-size: 0.84rem; color: #7c5e22; }
+  .accuracy-table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 0.81rem; }
+  .accuracy-table th, .accuracy-table td {
+    padding: 4px 10px; text-align: left; color: #7c5e22;
+  }
+  .accuracy-table th { font-weight: 600; border-bottom: 1px solid rgba(217,119,6,0.2); }
+  .accuracy-table tr:nth-child(even) td { background: rgba(217,119,6,0.04); }
+
+  /* ── Glass card ───────────────────────────────────────────────── */
+  .card {
+    background: var(--glass);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--r);
+    box-shadow: var(--shadow);
+    padding: 26px 30px;
+    margin-bottom: 16px;
+  }
+
+  .card-title {
+    font-size: 0.96rem; font-weight: 700; color: var(--blue-dark);
+    letter-spacing: 0.02em; text-transform: uppercase;
+    margin-bottom: 20px; display: flex; align-items: center; gap: 8px;
+  }
+  .badge-req {
+    background: #fee2e2; color: #b91c1c;
+    font-size: 0.68rem; padding: 2px 8px; border-radius: 20px;
+    text-transform: uppercase; letter-spacing: 0.04em; font-weight: 700;
+  }
+  .badge-opt {
+    background: #dbeafe; color: #1d4ed8;
+    font-size: 0.68rem; padding: 2px 8px; border-radius: 20px;
+    text-transform: uppercase; letter-spacing: 0.04em; font-weight: 700;
+  }
+
+  /* ── Field grid ───────────────────────────────────────────────── */
+  .field-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px 18px; }
+  .field-grid.cols-2 { grid-template-columns: 1fr 1fr; }
+  @media (max-width: 620px) {
+    .field-grid, .field-grid.cols-2 { grid-template-columns: 1fr 1fr; }
+  }
+  @media (max-width: 420px) {
+    .field-grid, .field-grid.cols-2 { grid-template-columns: 1fr; }
+  }
+
+  .field { display: flex; flex-direction: column; gap: 5px; }
+  .field label {
+    font-size: 0.82rem; font-weight: 600; color: var(--muted);
+    display: flex; align-items: center; gap: 4px;
+  }
+  .field label .req-star { color: var(--error); }
+
+  input[type="number"], input[type="text"], select, textarea {
+    width: 100%;
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    padding: 9px 13px;
+    font-size: 0.94rem;
+    color: var(--text);
+    transition: border-color 0.18s, box-shadow 0.18s;
+    appearance: none;
+  }
+  select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='none'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236b7a8f' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 32px; cursor: pointer; }
+  input:focus, select:focus, textarea:focus {
+    outline: none;
+    border-color: var(--blue);
+    box-shadow: 0 0 0 3px rgba(74,127,193,0.14);
+  }
+  input.field-error, select.field-error, textarea.field-error {
+    border-color: var(--error); background: var(--error-bg);
+  }
+  input.field-warn, select.field-warn { border-color: var(--warn); background: var(--warn-bg); }
+
+  .field-msg { font-size: 0.76rem; min-height: 16px; }
+  .field-msg.error { color: var(--error); }
+  .field-msg.warn  { color: var(--warn); }
+
+  textarea { resize: vertical; min-height: 90px; font-family: inherit; }
+
+  /* ── Optional collapsible ────────────────────────────────────── */
+  details.opt-section { margin-bottom: 16px; }
+  details.opt-section > summary {
+    cursor: pointer;
+    background: var(--glass);
+    backdrop-filter: blur(14px);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--r);
+    padding: 16px 24px;
+    font-weight: 600; font-size: 0.93rem; color: var(--blue-dark);
+    display: flex; align-items: center; gap: 8px;
+    list-style: none;
+    transition: background 0.15s;
+    box-shadow: var(--shadow);
+  }
+  details.opt-section > summary::-webkit-details-marker { display: none; }
+  details.opt-section > summary::before {
+    content: "▸"; color: var(--blue); font-size: 0.8rem;
+    transition: transform 0.2s;
+    display: inline-block;
+  }
+  details[open].opt-section > summary::before { transform: rotate(90deg); }
+  details.opt-section > summary:hover { background: rgba(255,255,255,0.78); }
+  .opt-body {
+    background: var(--glass);
+    backdrop-filter: blur(14px);
+    border: 1px solid var(--glass-border);
+    border-top: none;
+    border-radius: 0 0 var(--r) var(--r);
+    padding: 22px 28px 26px;
+    box-shadow: var(--shadow);
+  }
+
+  /* ── Comorbidity checkboxes ──────────────────────────────────── */
+  .comorbidity-title { font-size: 0.82rem; font-weight: 600; color: var(--muted); margin: 20px 0 12px; }
+  .comorbidity-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    gap: 8px;
+  }
+  .cb-item {
+    display: flex; align-items: center; gap: 9px;
+    background: var(--input-bg); border: 1px solid var(--border);
+    border-radius: var(--r-sm); padding: 8px 12px;
+    cursor: pointer; transition: background 0.15s, border-color 0.15s;
+    font-size: 0.85rem;
+  }
+  .cb-item:hover { background: rgba(255,255,255,0.95); border-color: var(--blue); }
+  .cb-item input[type="checkbox"] {
+    width: 16px; height: 16px; border-radius: 4px;
+    accent-color: var(--blue); cursor: pointer; flex-shrink: 0;
+  }
+
+  /* ── Submit button ───────────────────────────────────────────── */
+  .submit-wrap { text-align: center; margin: 28px 0 0; }
+  .btn-predict {
+    background: linear-gradient(135deg, #4a7fc1, #3566a8);
+    color: white; border: none;
+    padding: 15px 52px; border-radius: 14px;
+    font-size: 1rem; font-weight: 700; cursor: pointer;
+    box-shadow: 0 4px 20px rgba(74,127,193,0.38);
+    transition: transform 0.14s, box-shadow 0.14s;
+    letter-spacing: 0.01em;
+  }
+  .btn-predict:hover { transform: translateY(-1px); box-shadow: 0 6px 24px rgba(74,127,193,0.46); }
+  .btn-predict:active { transform: translateY(0); }
+  .btn-predict:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+
+  /* ── Loading spinner ─────────────────────────────────────────── */
+  .spinner {
+    display: inline-block; width: 18px; height: 18px;
+    border: 2.5px solid rgba(255,255,255,0.35);
+    border-top-color: white; border-radius: 50%;
+    animation: spin 0.75s linear infinite; vertical-align: middle;
+    margin-right: 8px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Results panel ───────────────────────────────────────────── */
+  #results-panel { margin-top: 28px; animation: fadeUp 0.4s ease; }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: translateY(0); } }
+
+  .acuity-display {
+    text-align: center; padding: 30px 20px 24px;
+    background: var(--glass);
+    backdrop-filter: blur(14px);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--r);
+    box-shadow: var(--shadow);
+    margin-bottom: 16px;
+  }
+  .acuity-circle {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 96px; height: 96px; border-radius: 50%;
+    font-size: 1.6rem; font-weight: 900; color: white;
+    box-shadow: 0 6px 28px rgba(0,0,0,0.22);
+    margin-bottom: 14px;
+  }
+  .acuity-level-name { font-size: 1.55rem; font-weight: 800; margin-bottom: 6px; }
+  .acuity-desc { color: var(--muted); font-size: 0.91rem; }
+
+  .chart-card {
+    background: var(--glass);
+    backdrop-filter: blur(14px);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--r);
+    box-shadow: var(--shadow);
+    padding: 24px 28px;
+  }
+  .chart-title { font-size: 0.85rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 16px; }
+  canvas { max-height: 200px; }
+
+  /* ── Divider ─────────────────────────────────────────────────── */
+  .section-divider { border: none; border-top: 1px solid var(--border); margin: 6px 0 20px; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-icon">
+      <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 100 20A10 10 0 0012 2zm1 14.5h-2v-2h2v2zm0-4h-2V7h2v5.5z"/></svg>
+    </div>
+    <h1>Triagegeist</h1>
+    <p>AI-powered Emergency Department triage acuity prediction</p>
+  </div>
+
+  <!-- Model accuracy warning -->
+  <div class="accuracy-card">
+    <span class="icon">⚠️</span>
+    <div>
+      <strong>Clinical Disclaimer — Read Before Use</strong>
+      <p>This tool is a research prototype and <strong>not a substitute for clinical judgment</strong>. It should never be used as the sole basis for patient care decisions.</p>
+      <table class="accuracy-table">
+        <tr><th>Metric</th><th>Value</th><th>Notes</th></tr>
+        <tr><td>CV Macro F1</td><td>0.9730</td><td>5-fold stratified CV on 80,000 ED records</td></tr>
+        <tr><td>Ensemble</td><td>25% LightGBM + 75% XGBoost</td><td>Optuna-tuned parameters</td></tr>
+        <tr><td>Classes</td><td>L1–L5 (ESI scale)</td><td>All five levels weighted equally</td></tr>
+        <tr><td>Limitation</td><td>Dataset-specific</td><td>Performance may differ in other institutions or populations</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <form id="triage-form" novalidate>
+
+    <!-- ── Vital Signs ───────────────────────────────────────── -->
+    <div class="card">
+      <div class="card-title">Vital Signs <span class="badge-req">Required</span></div>
+      <div class="field-grid">
+
+        <div class="field" id="wrap-systolic_bp">
+          <label>Systolic BP <span class="req-star">*</span></label>
+          <input type="number" id="systolic_bp" name="systolic_bp" placeholder="mmHg" min="40" max="300" step="1">
+          <div class="field-msg" id="msg-systolic_bp"></div>
+        </div>
+
+        <div class="field" id="wrap-diastolic_bp">
+          <label>Diastolic BP <span class="req-star">*</span></label>
+          <input type="number" id="diastolic_bp" name="diastolic_bp" placeholder="mmHg" min="20" max="200" step="1">
+          <div class="field-msg" id="msg-diastolic_bp"></div>
+        </div>
+
+        <div class="field" id="wrap-heart_rate">
+          <label>Heart Rate <span class="req-star">*</span></label>
+          <input type="number" id="heart_rate" name="heart_rate" placeholder="bpm" min="10" max="300" step="1">
+          <div class="field-msg" id="msg-heart_rate"></div>
+        </div>
+
+        <div class="field" id="wrap-respiratory_rate">
+          <label>Respiratory Rate <span class="req-star">*</span></label>
+          <input type="number" id="respiratory_rate" name="respiratory_rate" placeholder="/min" min="0" max="80" step="1">
+          <div class="field-msg" id="msg-respiratory_rate"></div>
+        </div>
+
+        <div class="field" id="wrap-temperature_c">
+          <label>Temperature <span class="req-star">*</span></label>
+          <input type="number" id="temperature_c" name="temperature_c" placeholder="°C" min="25" max="45" step="0.1">
+          <div class="field-msg" id="msg-temperature_c"></div>
+        </div>
+
+        <div class="field" id="wrap-spo2">
+          <label>SpO₂ <span class="req-star">*</span></label>
+          <input type="number" id="spo2" name="spo2" placeholder="%" min="50" max="100" step="0.1">
+          <div class="field-msg" id="msg-spo2"></div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ── Clinical Assessment ──────────────────────────────── -->
+    <div class="card">
+      <div class="card-title">Clinical Assessment <span class="badge-req">Required</span></div>
+      <div class="field-grid">
+
+        <div class="field" id="wrap-gcs_total">
+          <label>GCS Total <span class="req-star">*</span></label>
+          <input type="number" id="gcs_total" name="gcs_total" placeholder="3 – 15" min="3" max="15" step="1">
+          <div class="field-msg" id="msg-gcs_total"></div>
+        </div>
+
+        <div class="field" id="wrap-pain_score">
+          <label>Pain Score <span class="req-star">*</span></label>
+          <input type="number" id="pain_score" name="pain_score" placeholder="-1 – 10" min="-1" max="10" step="1">
+          <div class="field-msg" id="msg-pain_score"></div>
+        </div>
+
+        <div class="field" id="wrap-mental_status_triage">
+          <label>Mental Status <span class="req-star">*</span></label>
+          <select id="mental_status_triage" name="mental_status_triage">
+            <option value="">Select…</option>
+            <option value="alert">Alert</option>
+            <option value="agitated">Agitated</option>
+            <option value="confused">Confused</option>
+            <option value="drowsy">Drowsy</option>
+            <option value="unresponsive">Unresponsive</option>
+          </select>
+          <div class="field-msg" id="msg-mental_status_triage"></div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ── Patient Information ──────────────────────────────── -->
+    <div class="card">
+      <div class="card-title">Patient Information <span class="badge-req">Required</span></div>
+      <div class="field-grid">
+
+        <div class="field" id="wrap-age">
+          <label>Age <span class="req-star">*</span></label>
+          <input type="number" id="age" name="age" placeholder="years" min="0" max="150" step="1">
+          <div class="field-msg" id="msg-age"></div>
+        </div>
+
+        <div class="field" id="wrap-sex">
+          <label>Sex <span class="req-star">*</span></label>
+          <select id="sex" name="sex">
+            <option value="">Select…</option>
+            <option value="M">Male</option>
+            <option value="F">Female</option>
+            <option value="Other">Other / Unknown</option>
+          </select>
+          <div class="field-msg" id="msg-sex"></div>
+        </div>
+
+        <div class="field" id="wrap-arrival_mode">
+          <label>Arrival Mode <span class="req-star">*</span></label>
+          <select id="arrival_mode" name="arrival_mode">
+            <option value="">Select…</option>
+            <option value="walk-in">Walk-in</option>
+            <option value="ambulance">Ambulance</option>
+            <option value="brought_by_family">Brought by Family</option>
+            <option value="helicopter">Helicopter</option>
+            <option value="police">Police</option>
+            <option value="transfer">Transfer</option>
+          </select>
+          <div class="field-msg" id="msg-arrival_mode"></div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ── Optional: Additional Details ────────────────────── -->
+    <details class="opt-section" id="details-additional">
+      <summary>Additional Details <span class="badge-opt">Optional</span></summary>
+      <div class="opt-body">
+        <div class="field-grid">
+
+          <div class="field">
+            <label>Prior ED Visits (12 mo)</label>
+            <input type="number" id="num_prior_ed_visits_12m" name="num_prior_ed_visits_12m" placeholder="0" min="0" max="100" step="1">
+            <div class="field-msg" id="msg-num_prior_ed_visits_12m"></div>
+          </div>
+
+          <div class="field">
+            <label>Prior Admissions (12 mo)</label>
+            <input type="number" id="num_prior_admissions_12m" name="num_prior_admissions_12m" placeholder="0" min="0" max="100" step="1">
+            <div class="field-msg" id="msg-num_prior_admissions_12m"></div>
+          </div>
+
+          <div class="field">
+            <label>Active Medications</label>
+            <input type="number" id="num_active_medications" name="num_active_medications" placeholder="0" min="0" max="100" step="1">
+            <div class="field-msg" id="msg-num_active_medications"></div>
+          </div>
+
+          <div class="field">
+            <label>Weight (kg)</label>
+            <input type="number" id="weight_kg" name="weight_kg" placeholder="kg" min="0.5" max="700" step="0.1">
+            <div class="field-msg" id="msg-weight_kg"></div>
+          </div>
+
+          <div class="field">
+            <label>Height (cm)</label>
+            <input type="number" id="height_cm" name="height_cm" placeholder="cm" min="30" max="280" step="0.5">
+            <div class="field-msg" id="msg-height_cm"></div>
+          </div>
+
+          <div class="field">
+            <label>Pain Location</label>
+            <select id="pain_location" name="pain_location">
+              <option value="unknown">Unknown / Not specified</option>
+              <option value="abdomen">Abdomen</option>
+              <option value="back">Back</option>
+              <option value="chest">Chest</option>
+              <option value="extremity">Extremity</option>
+              <option value="head">Head</option>
+              <option value="multiple">Multiple</option>
+              <option value="none">None</option>
+              <option value="pelvis">Pelvis</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label>Insurance Type</label>
+            <select id="insurance_type" name="insurance_type">
+              <option value="unknown">Unknown</option>
+              <option value="public">Public</option>
+              <option value="private">Private</option>
+              <option value="military">Military</option>
+              <option value="none">None / Uninsured</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label>Transport Origin</label>
+            <select id="transport_origin" name="transport_origin">
+              <option value="other">Other</option>
+              <option value="home">Home</option>
+              <option value="nursing_home">Nursing Home</option>
+              <option value="other_hospital">Other Hospital</option>
+              <option value="outdoor">Outdoors</option>
+              <option value="public_space">Public Space</option>
+              <option value="school">School</option>
+              <option value="workplace">Workplace</option>
+            </select>
+          </div>
+
+        </div>
+      </div>
+    </details>
+
+    <!-- ── Optional: Patient History ───────────────────────── -->
+    <details class="opt-section" id="details-history">
+      <summary>Patient History — Comorbidities <span class="badge-opt">Optional</span></summary>
+      <div class="opt-body">
+        <div class="comorbidity-grid" id="comorbidity-grid">
+          <!-- populated by JS -->
+        </div>
+      </div>
+    </details>
+
+    <!-- ── Optional: Chief Complaint ───────────────────────── -->
+    <details class="opt-section" id="details-complaint">
+      <summary>Chief Complaint (free text) <span class="badge-opt">Optional</span></summary>
+      <div class="opt-body">
+        <div class="field">
+          <label>Describe the patient's presenting complaint</label>
+          <textarea id="chief_complaint_raw" name="chief_complaint_raw" placeholder="e.g. chest pain radiating to left arm, onset 2 hours ago…"></textarea>
+        </div>
+      </div>
+    </details>
+
+    <!-- Submit -->
+    <div class="submit-wrap">
+      <button type="button" class="btn-predict" id="predict-btn">
+        Predict Triage Acuity
+      </button>
+    </div>
+
+  </form>
+
+  <!-- ── Results ─────────────────────────────────────────────── -->
+  <div id="results-panel" style="display:none">
+
+    <div class="acuity-display">
+      <div class="acuity-circle" id="acuity-circle">L?</div>
+      <div class="acuity-level-name" id="acuity-level-name">—</div>
+      <div class="acuity-desc" id="acuity-desc">—</div>
+    </div>
+
+    <div class="chart-card">
+      <div class="chart-title">Probability Distribution — All Acuity Levels</div>
+      <canvas id="prob-chart"></canvas>
+    </div>
+
+  </div>
+
+</div><!-- /page -->
+
+<script>
+// ── Constants ────────────────────────────────────────────────────────────
+const ACUITY_COLORS = ['#D7191C','#F46D43','#FDAE61','#A6D96A','#1A9641'];
+const ACUITY_BG     = ['#D7191C','#F46D43','#FDAE61','#A6D96A','#1A9641'];
+const ACUITY_NAMES  = ['Resuscitation','Emergent','Urgent','Less Urgent','Non-Urgent'];
+const ACUITY_DESCS  = [
+  'Immediate life-saving intervention required',
+  'High risk — needs immediate evaluation by a physician',
+  'Requires two or more resources for stabilization',
+  'Needs one resource; patient is stable',
+  'Routine care; no urgent resources needed',
+];
+const ACUITY_TEXT_COLORS = ['white','white','#5a3c00','#2d4a0e','white'];
+
+const MANDATORY = [
+  'systolic_bp','diastolic_bp','heart_rate','respiratory_rate',
+  'temperature_c','spo2','gcs_total','pain_score',
+  'mental_status_triage','age','sex','arrival_mode',
+];
+
+const RANGES = {
+  systolic_bp:              { min:40,   max:300,  warn:[40,300],  label:'Systolic BP' },
+  diastolic_bp:             { min:20,   max:200,  warn:[20,200],  label:'Diastolic BP' },
+  heart_rate:               { min:10,   max:300,  warn:[10,300],  label:'Heart Rate' },
+  respiratory_rate:         { min:0,    max:80,   warn:[0,80],    label:'Respiratory Rate' },
+  temperature_c:            { min:25,   max:45,   warn:[25,45],   label:'Temperature' },
+  spo2:                     { min:50,   max:100,  warn:[50,100],  label:'SpO₂' },
+  gcs_total:                { min:3,    max:15,   warn:[3,15],    label:'GCS Total' },
+  pain_score:               { min:-1,   max:10,   warn:[-1,10],   label:'Pain Score' },
+  age:                      { min:0,    max:150,  warn:[0,120],   label:'Age' },
+  weight_kg:                { min:0.5,  max:700,  warn:[0.5,500], label:'Weight' },
+  height_cm:                { min:30,   max:280,  warn:[30,250],  label:'Height' },
+  num_prior_ed_visits_12m:  { min:0,    max:100,  warn:[0,50],    label:'Prior ED Visits' },
+  num_prior_admissions_12m: { min:0,    max:100,  warn:[0,50],    label:'Prior Admissions' },
+  num_active_medications:   { min:0,    max:100,  warn:[0,50],    label:'Active Medications' },
+};
+
+const COMORBIDITIES = [
+  ['hx_hypertension',            'Hypertension'],
+  ['hx_diabetes_type2',          'Diabetes (Type 2)'],
+  ['hx_diabetes_type1',          'Diabetes (Type 1)'],
+  ['hx_asthma',                  'Asthma'],
+  ['hx_copd',                    'COPD'],
+  ['hx_heart_failure',           'Heart Failure'],
+  ['hx_atrial_fibrillation',     'Atrial Fibrillation'],
+  ['hx_ckd',                     'Chronic Kidney Disease'],
+  ['hx_liver_disease',           'Liver Disease'],
+  ['hx_malignancy',              'Malignancy (Cancer)'],
+  ['hx_obesity',                 'Obesity'],
+  ['hx_depression',              'Depression'],
+  ['hx_anxiety',                 'Anxiety'],
+  ['hx_dementia',                'Dementia'],
+  ['hx_epilepsy',                'Epilepsy'],
+  ['hx_hypothyroidism',          'Hypothyroidism'],
+  ['hx_hyperthyroidism',         'Hyperthyroidism'],
+  ['hx_hiv',                     'HIV'],
+  ['hx_coagulopathy',            'Coagulopathy'],
+  ['hx_immunosuppressed',        'Immunosuppressed'],
+  ['hx_pregnant',                'Pregnant'],
+  ['hx_substance_use_disorder',  'Substance Use Disorder'],
+  ['hx_coronary_artery_disease', 'Coronary Artery Disease'],
+  ['hx_stroke_prior',            'Prior Stroke'],
+  ['hx_peripheral_vascular_disease', 'Peripheral Vascular Disease'],
+];
+
+// ── Build comorbidity checkboxes ─────────────────────────────────────────
+const cbGrid = document.getElementById('comorbidity-grid');
+COMORBIDITIES.forEach(([key, label]) => {
+  const div = document.createElement('label');
+  div.className = 'cb-item';
+  div.innerHTML = `<input type="checkbox" id="${key}" name="${key}" value="1"> ${label}`;
+  cbGrid.appendChild(div);
+});
+
+// ── Validation helpers ────────────────────────────────────────────────────
+function setFieldState(id, state, msg) {
+  const el  = document.getElementById(id);
+  const msgEl = document.getElementById('msg-' + id);
+  if (!el) return;
+  el.classList.remove('field-error','field-warn');
+  if (state === 'error') el.classList.add('field-error');
+  if (state === 'warn')  el.classList.add('field-warn');
+  if (msgEl) {
+    msgEl.textContent = msg || '';
+    msgEl.className = 'field-msg' + (state ? ' ' + state : '');
+  }
+}
+
+function validateField(id) {
+  const el = document.getElementById(id);
+  if (!el) return true;
+  const val = el.value.trim();
+  const isMandatory = MANDATORY.includes(id);
+  const range = RANGES[id];
+
+  // Empty check
+  if (val === '') {
+    if (isMandatory) {
+      setFieldState(id, 'error', 'This field is required.');
+      return false;
+    }
+    setFieldState(id, '', '');
+    return true;
+  }
+
+  // Range check (numeric fields)
+  if (range && el.type === 'number') {
+    const num = parseFloat(val);
+    if (isNaN(num)) {
+      setFieldState(id, 'error', 'Enter a valid number.');
+      return false;
+    }
+    if (num < range.min || num > range.max) {
+      setFieldState(id, 'error', `Outside possible range (${range.min}–${range.max}).`);
+      return false;
+    }
+    if (num < range.warn[0] || num > range.warn[1]) {
+      setFieldState(id, 'warn', `Unusual value — please confirm.`);
+      return true;   // warn but don't block
+    }
+  }
+
+  setFieldState(id, '', '');
+  return true;
+}
+
+// Live validation on blur
+[...MANDATORY, ...Object.keys(RANGES)].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener('blur', () => validateField(id));
+});
+
+// ── Chart instance ────────────────────────────────────────────────────────
+let probChart = null;
+
+function renderChart(probs) {
+  const ctx = document.getElementById('prob-chart').getContext('2d');
+  const labels = ACUITY_NAMES.map((n, i) => `L${i+1} – ${n}`);
+  const data   = [probs.L1, probs.L2, probs.L3, probs.L4, probs.L5];
+
+  if (probChart) probChart.destroy();
+  probChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Probability',
+        data: data.map(v => Math.round(v * 1000) / 10),   // percent
+        backgroundColor: ACUITY_COLORS.map(c => c + 'cc'),
+        borderColor: ACUITY_COLORS,
+        borderWidth: 1.5,
+        borderRadius: 7,
+        borderSkipped: false,
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => ` ${ctx.raw.toFixed(1)}%`
+          }
+        }
+      },
+      scales: {
+        x: {
+          min: 0, max: 100,
+          ticks: {
+            callback: v => v + '%',
+            color: '#6b7a8f', font: { size: 12 }
+          },
+          grid: { color: 'rgba(148,163,184,0.2)' },
+        },
+        y: {
+          ticks: { color: '#6b7a8f', font: { size: 13 } },
+          grid: { display: false }
+        }
+      }
+    }
+  });
+}
+
+// ── Collect form data ─────────────────────────────────────────────────────
+function collectFormData() {
+  const data = {};
+  document.querySelectorAll('#triage-form input, #triage-form select, #triage-form textarea').forEach(el => {
+    if (!el.name) return;
+    if (el.type === 'checkbox') {
+      data[el.name] = el.checked ? 1 : 0;
+    } else {
+      const v = el.value.trim();
+      data[el.name] = v === '' ? null : (el.type === 'number' ? (v === '' ? null : parseFloat(v)) : v);
+    }
+  });
+  return data;
+}
+
+// ── Predict ───────────────────────────────────────────────────────────────
+document.getElementById('predict-btn').addEventListener('click', async () => {
+  // Validate all mandatory fields
+  let valid = true;
+  let firstInvalid = null;
+  for (const id of MANDATORY) {
+    const ok = validateField(id);
+    if (!ok && !firstInvalid) firstInvalid = id;
+    if (!ok) valid = false;
+  }
+
+  if (!valid) {
+    document.getElementById(firstInvalid)
+      .closest('.field, .card')
+      .scrollIntoView({ behavior: 'smooth', block: 'center' });
+    document.getElementById(firstInvalid).focus();
+    return;
+  }
+
+  const btn = document.getElementById('predict-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Predicting…';
+
+  try {
+    const payload = collectFormData();
+    const res = await fetch('/predict', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const result = await res.json();
+    if (result.error) throw new Error(result.error);
+
+    const lvl   = result.prediction;
+    const idx   = lvl - 1;
+    const color = ACUITY_COLORS[idx];
+
+    const circle = document.getElementById('acuity-circle');
+    const name   = document.getElementById('acuity-level-name');
+    const desc   = document.getElementById('acuity-desc');
+
+    circle.textContent  = `L${lvl}`;
+    circle.style.background = color;
+    circle.style.color       = ACUITY_TEXT_COLORS[idx];
+    name.textContent    = ACUITY_NAMES[idx];
+    name.style.color    = color;
+    desc.textContent    = ACUITY_DESCS[idx];
+
+    renderChart(result.probabilities);
+
+    const panel = document.getElementById('results-panel');
+    panel.style.display = 'block';
+    panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  } catch (err) {
+    alert('Prediction failed: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = 'Predict Triage Acuity';
+  }
+});
+</script>
+</body>
+</html>
