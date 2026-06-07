@@ -2,7 +2,7 @@
 
 Predicting emergency department triage acuity using machine learning — classifying patients into ESI urgency levels from structured clinical data collected at the point of triage.
 
-## Live Demo: **https://triagegeist.onrender.com**
+Live Demo: **https://triagegeist.onrender.com**
 
 ---
 
