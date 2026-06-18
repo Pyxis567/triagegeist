@@ -57,6 +57,7 @@ Key feature groups: **vital signs** (BP, HR, SpO2, temp, respiratory rate), **de
 triagegeist/
 ├── CLAUDE.md                      ← agent workflow and style guide
 ├── README.md
+├── requirements.txt               ← Python dependencies (pip install -r requirements.txt)
 ├── train_all.py                   ← baseline: trains all models, saves figures + best submission CSV
 ├── tune.py                        ← Optuna tuning entry point (LGBM / XGB)
 ├── ensemble.py                    ← OOF blend of default LGBM + tuned XGB
@@ -128,7 +129,8 @@ All models are defined in `src/models.py` and importable into the notebook.
 
 ### LightGBM (`run_lgbm`)
 - 5-fold stratified CV, retrain on full data for test predictions
-- Default: 300 estimators, max_depth=7, lr=0.1, subsample=0.8, colsample_bytree=0.8
+- Default params: 300 estimators, max_depth=7, lr=0.1, subsample=0.8, colsample_bytree=0.8
+- Optuna tuning (20 trials) was run but did not improve over defaults in 5-fold CV — default params kept
 - **CV Macro F1: 0.9727**
 
 ### XGBoost — tuned (`tune.py --model xgb`)
@@ -150,14 +152,15 @@ All models are defined in `src/models.py` and importable into the notebook.
 
 ## Hyperparameter Tuning
 
-XGBoost was tuned with [Optuna](https://optuna.org/) using TPE sampling and HyperbandPruner. LightGBM tuning (20 trials) did not improve over the default configuration.
+XGBoost was tuned with [Optuna](https://optuna.org/) using TPE sampling and HyperbandPruner. LightGBM tuning (20 trials) did not improve over the default configuration, so default params were kept for LGBM.
 
 | | LGBM | XGBoost |
 |---|---|---|
 | Trials | 20 | 50 |
-| CV folds | 5 | 5 |
-| Best 5-fold F1 | 0.9727 | 0.9723 |
-| n_estimators | 300 | 1992 |
+| Search CV folds | 3 | 3 |
+| Best 3-fold F1 (search) | 0.9695 | 0.9716 |
+| Validated 5-fold F1 | 0.9727 (default params) | 0.9723 (tuned params) |
+| n_estimators used | 300 (default) | 1992 (early stopping) |
 
 Key XGBoost params found: `max_depth=6`, `learning_rate=0.050`, `gamma=1.87`, `max_delta_step=1`, `colsample_bynode=0.83`.
 
@@ -171,6 +174,26 @@ python tune.py --model lgbm --n-trials 20
 
 ## Setup
 
+### Environment
+
+```bash
+# 1. Create and activate a virtual environment
+python -m venv .venv
+.venv\Scripts\activate        # Windows
+# source .venv/bin/activate   # Mac / Linux
+
+# 2. Install PyTorch (choose one):
+#    GPU (CUDA 12.x)
+pip install torch --index-url https://download.pytorch.org/whl/cu124
+#    CPU only
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+# 3. Install remaining dependencies
+pip install -r requirements.txt
+```
+
+### Running
+
 ```bash
 # Run all baseline models
 python train_all.py
@@ -183,7 +206,7 @@ python tune.py --model xgb  --n-trials 50
 python ensemble.py
 
 # Open notebook
-conda run -p C:\Users\Xh321\Miniforge3\envs\dsc80 jupyter notebook
+jupyter notebook triagegeist.ipynb
 ```
 
 **Reproducibility:** `SEED = 93` — passed to all models, CV splits, and Optuna samplers.
